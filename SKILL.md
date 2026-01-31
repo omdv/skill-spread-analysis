@@ -9,60 +9,63 @@ metadata:
 
 # SPX Mean Reversion Analysis
 
-This skill runs statistical mean reversion analysis on SPX to generate trading signals for put-selling strategies.
+## Instructions
 
-## Running the Analysis
+Follow these steps to run the analysis and interpret results for the user:
 
-### Live Data (requires FMP_API_KEY)
+### Step 1: Run the Analysis
 
-```bash
-cd /home/om/projects/reversion-test && uv run python main.py
-```
-
-### Synthetic Data Demo
+Execute the appropriate command based on context:
 
 ```bash
-cd /home/om/projects/reversion-test && uv run python main.py --synthetic
+# Default (uses live data if FMP_API_KEY is set, otherwise synthetic)
+uv run python main.py
+
+# With plot saved to file
+uv run python main.py --save=analysis.png
 ```
 
-### With Visualization
+### Step 2: Interpret the Signal
 
-```bash
-cd /home/om/projects/reversion-test && uv run python main.py --plot
-```
+After running, explain the signal to the user in plain language:
 
-### Save Plot to File
+| Signal | What to Tell the User |
+|--------|----------------------|
+| **GREEN_LIGHT** | "Conditions look favorable for selling puts. The market is in a mean-reverting regime and we have a dip." |
+| **GREEN_LIGHT (HIGH CONVICTION)** | "This is a strong setup. Multiple factors align: [list the conviction factors from output]." |
+| **GREEN_LIGHT (A+ SETUP)** | "This is an exceptional setup with 3+ confirming factors. High-conviction opportunity." |
+| **WAIT** | "The market is mean-reverting (good), but there's no significant dip yet. Wait for a pullback." |
+| **RED_FLAG** | "Do not sell puts right now. The market is trending/in momentum mode - mean reversion strategies will fail." |
 
-```bash
-cd /home/om/projects/reversion-test && uv run python main.py --save=analysis.png
-```
+### Step 3: Highlight Key Numbers
 
-## Signal Interpretation
+Extract and explain these metrics from the output:
 
-| Signal | Action | Meaning |
-|--------|--------|---------|
-| GREEN_LIGHT | Sell puts | Mean-reverting regime with dip detected |
-| GREEN_LIGHT (HIGH CONVICTION) | Sell puts confidently | Multiple confirming factors present |
-| GREEN_LIGHT (A+ SETUP) | Best setup | 3+ conviction factors aligned |
-| WAIT | Do nothing | Mean-reverting but no dip present |
-| RED_FLAG | Do not trade | Trending/momentum regime - mean reversion will fail |
+1. **Z-Score**: How stretched is the market?
+   - Below -2: "Deep dip - rubber band is very stretched"
+   - -2 to -1: "Moderate dip"
+   - Above -1: "No significant dip"
 
-## Key Metrics
+2. **Hurst Exponent**: Is mean reversion working?
+   - Below 0.45: "Strongly mean-reverting - good for the strategy"
+   - 0.45-0.55: "Neutral/random walk"
+   - Above 0.55: "Trending - dangerous for put selling"
 
-- **Z-Score**: Stretch from MA normalized by volatility. < -2 is deep dip.
-- **Hurst Exponent**: < 0.5 = mean-reverting (safe), > 0.5 = trending (danger)
-- **Half-Life**: Days for stretch to revert halfway. Use for DTE selection.
-- **Recommended DTE**: 1x to 2x half-life in days
-- **VIX Z-Score**: > 2 means elevated premiums (conviction booster)
+3. **Half-Life & Recommended DTE**: How long until reversion?
+   - Tell user: "Based on half-life of X days, target DTE of Y-Z days for your puts"
 
-## Environment Setup
+4. **VIX** (if shown): Are premiums rich?
+   - Z-Score > 2: "VIX is elevated - premiums are rich, good time to sell"
+   - Otherwise: "VIX is normal - standard premiums"
 
-For live SPX/VIX data, set `FMP_API_KEY`:
+### Step 4: Give Actionable Summary
 
-```bash
-export FMP_API_KEY=your_key_here
-```
+End with a clear recommendation, e.g.:
+- "Bottom line: [GREEN/WAIT/RED]. [One sentence on what to do]. If entering, target X-Y DTE."
 
-Get a free key at https://financialmodelingprep.com/developer/docs/
+## Environment Note
 
-Without the API key, the script uses synthetic data that demonstrates the analysis.
+If the script shows "FMP_API_KEY not set", inform the user:
+- Analysis ran on synthetic demo data
+- For live SPX/VIX data: `export FMP_API_KEY=your_key`
+- Free API key at https://financialmodelingprep.com/developer/docs/
