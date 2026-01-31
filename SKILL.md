@@ -1,7 +1,7 @@
 ---
 name: mean-reversion-test
 description: Analyze SPX mean reversion for put-selling decisions. Use when the user wants to check market conditions, run mean reversion analysis, generate trading signals (GREEN_LIGHT/WAIT/RED_FLAG), or analyze SPX/VIX relationship for options trading.
-compatibility: Requires uv, python 3.14, and optionally FMP_API_KEY for live data
+compatibility: Requires uv, python 3.14, and FMP_API_KEY for live data
 metadata:
   author: om
   version: "1.0"
@@ -15,14 +15,14 @@ Follow these steps to run the analysis and interpret results for the user:
 
 ### Step 1: Run the Analysis
 
-Execute the appropriate command based on context:
+Execute from the project directory `/home/om/projects/reversion-test`:
 
 ```bash
-# Default (uses live data if FMP_API_KEY is set, otherwise synthetic)
-uv run python main.py
+# Live data analysis, update FMP_API_KEY
+export FMP_API_KEY=Ai.... && uv run python main.py
 
-# With plot saved to file
-uv run python main.py --save=analysis.png
+# With plot saved to file, update FMP_API_KEY
+export FMP_API_KEY=Ai.... && uv run python main.py --save=analysis.png
 ```
 
 ### Step 2: Interpret the Signal
