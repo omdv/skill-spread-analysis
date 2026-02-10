@@ -103,6 +103,109 @@ def fetch_quote(symbol: str, api_key: str | None = None) -> float:
     return float(data[0]["price"])
 
 
+def fetch_economic_calendar(days: int = 3, api_key: str | None = None) -> list[dict]:
+    """Fetch upcoming economic events from FMP."""
+    if api_key is None:
+        api_key = get_api_key()
+
+    today = datetime.now()
+    end_date = today + timedelta(days=days)
+
+    url = f"{FMP_BASE_URL}/economic_calendar"
+    params = {
+        "apikey": api_key,
+        "from": today.strftime("%Y-%m-%d"),
+        "to": end_date.strftime("%Y-%m-%d"),
+    }
+
+    # High-impact events to watch
+    important_events = {
+        "Fed Interest Rate Decision": "high",
+        "FOMC": "high",
+        "Federal Funds Rate": "high",
+        "CPI": "high",
+        "Core CPI": "high",
+        "Inflation Rate": "high",
+        "Nonfarm Payrolls": "high",
+        "Non-Farm Payrolls": "high",
+        "Unemployment Rate": "high",
+        "GDP": "high",
+        "GDP Growth Rate": "high",
+        "PCE": "high",
+        "Core PCE": "high",
+        "Retail Sales": "medium",
+        "PPI": "medium",
+        "ISM Manufacturing": "medium",
+        "ISM Services": "medium",
+        "Initial Jobless Claims": "medium",
+        "Consumer Confidence": "medium",
+        "Durable Goods": "medium",
+    }
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+        events = []
+        for item in data:
+            if item.get("country") != "US":
+                continue
+            event_name = item.get("event", "")
+            # Check if this is an important event
+            for key, impact in important_events.items():
+                if key.lower() in event_name.lower():
+                    events.append({
+                        "date": item.get("date", ""),
+                        "event": event_name,
+                        "impact": impact,
+                    })
+                    break
+
+        # Filter to high-impact only
+        high_impact = [e for e in events if e["impact"] == "high"]
+
+        # Dedupe by date + category
+        seen = set()
+        unique = []
+        for e in high_impact:
+            date_part = e["date"].split(" ")[0]
+            name = e["event"].lower()
+            if "cpi" in name or "inflation" in name:
+                cat = "CPI"
+            elif "gdp" in name:
+                cat = "GDP"
+            elif "payroll" in name or "nonfarm" in name:
+                cat = "NFP"
+            elif "unemploy" in name:
+                cat = "Unemployment"
+            elif "fed" in name or "fomc" in name:
+                cat = "FOMC"
+            elif "pce" in name:
+                cat = "PCE"
+            else:
+                cat = e["event"]
+
+            key = (date_part, cat)
+            if key not in seen:
+                seen.add(key)
+                unique.append({"date": date_part, "event": cat, "impact": "high"})
+
+        unique.sort(key=lambda x: x["date"])
+        return unique
+
+    except Exception:
+        return []  # Fail silently - events are supplementary
+
+
+@dataclass
+class MarketEvent:
+    date: str
+    event: str
+    impact: str  # "high", "medium", "low"
+
+
 @dataclass
 class SpreadSignal:
     signal: str  # GREEN_LIGHT, WAIT, RED_FLAG
@@ -138,6 +241,9 @@ class MarketAnalysis:
 
     # Recommendation
     recommendation: str
+
+    # Upcoming events (next 3 days)
+    events: list[MarketEvent]
 
 
 def variance_ratio(prices: pd.Series, k: int) -> float:
@@ -368,6 +474,7 @@ def analyze_market(
     current_spx: float,
     vix_series: pd.Series,
     current_vix: float,
+    events: list[dict] | None = None,
     ma_period: int = 20,
 ) -> MarketAnalysis:
     """Run complete market analysis for both put and call spreads."""
@@ -441,6 +548,16 @@ def analyze_market(
     else:
         recommendation = "NO TRADE today"
 
+    # Convert events to MarketEvent objects
+    event_list = []
+    if events:
+        for e in events:
+            event_list.append(MarketEvent(
+                date=e["date"],
+                event=e["event"],
+                impact=e["impact"],
+            ))
+
     return MarketAnalysis(
         timestamp=datetime.now().isoformat(),
         spx_price=current_spx,
@@ -457,6 +574,7 @@ def analyze_market(
         put_signal=put_signal,
         call_signal=call_signal,
         recommendation=recommendation,
+        events=event_list,
     )
 
 
@@ -560,6 +678,15 @@ def print_analysis(analysis: MarketAnalysis):
         print(f"   • {r}")
     if analysis.call_signal.conviction_boosters:
         print(f"   {green}Boosters: {', '.join(analysis.call_signal.conviction_boosters)}{reset}")
+
+    # Upcoming events
+    if analysis.events:
+        print(f"\n {cyan}Upcoming Events (next 3 days):{reset}")
+        for evt in analysis.events:
+            evt_color = red if evt.impact == "high" else yellow if evt.impact == "medium" else reset
+            print(f"   {evt_color}• {evt.date}: {evt.event} [{evt.impact.upper()}]{reset}")
+    else:
+        print(f"\n {cyan}Upcoming Events:{reset} None significant in next 3 days")
 
     # Recommendation
     rec_color = green if "Consider" in analysis.recommendation else yellow if "WAIT" in analysis.recommendation else red
@@ -668,6 +795,7 @@ def main():
             scenario = arg.split("=", 1)[1]
 
     try:
+        events = []
         if use_synthetic:
             spx_df, vix_series, current_spx, current_vix = generate_synthetic_data(scenario=scenario)
             if not output_json:
@@ -688,10 +816,13 @@ def main():
             current_spx = fetch_quote("^GSPC", api_key)
             current_vix = fetch_quote("^VIX", api_key)
 
+            # Fetch economic calendar
+            events = fetch_economic_calendar(days=3, api_key=api_key)
+
             if not output_json:
                 print("done.")
 
-        analysis = analyze_market(spx_df, current_spx, vix_series, current_vix)
+        analysis = analyze_market(spx_df, current_spx, vix_series, current_vix, events=events)
 
         if output_json:
             # Convert dataclass to dict for JSON
