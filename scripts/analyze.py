@@ -104,7 +104,7 @@ def fetch_quote(symbol: str, api_key: str | None = None) -> float:
 
 
 def fetch_economic_calendar(days: int = 3, api_key: str | None = None) -> list[dict]:
-    """Fetch upcoming economic events from FMP."""
+    """Fetch upcoming high-impact economic events from FMP, grouped by day."""
     if api_key is None:
         api_key = get_api_key()
 
@@ -118,82 +118,32 @@ def fetch_economic_calendar(days: int = 3, api_key: str | None = None) -> list[d
         "to": end_date.strftime("%Y-%m-%d"),
     }
 
-    # High-impact events to watch
-    important_events = {
-        "Fed Interest Rate Decision": "high",
-        "FOMC": "high",
-        "Federal Funds Rate": "high",
-        "CPI": "high",
-        "Core CPI": "high",
-        "Inflation Rate": "high",
-        "Nonfarm Payrolls": "high",
-        "Non-Farm Payrolls": "high",
-        "Unemployment Rate": "high",
-        "GDP": "high",
-        "GDP Growth Rate": "high",
-        "PCE": "high",
-        "Core PCE": "high",
-        "Retail Sales": "medium",
-        "PPI": "medium",
-        "ISM Manufacturing": "medium",
-        "ISM Services": "medium",
-        "Initial Jobless Claims": "medium",
-        "Consumer Confidence": "medium",
-        "Durable Goods": "medium",
-    }
-
     try:
         with httpx.Client(timeout=30.0) as client:
             response = client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
 
-        events = []
+        # Group high-impact US events by date
+        by_date: dict[str, list[str]] = {}
         for item in data:
-            if item.get("country") != "US":
+            if item.get("country") != "US" or item.get("impact") != "High":
                 continue
+            date_part = item.get("date", "").split(" ")[0]
             event_name = item.get("event", "")
-            # Check if this is an important event
-            for key, impact in important_events.items():
-                if key.lower() in event_name.lower():
-                    events.append({
-                        "date": item.get("date", ""),
-                        "event": event_name,
-                        "impact": impact,
-                    })
-                    break
+            if date_part not in by_date:
+                by_date[date_part] = []
+            by_date[date_part].append(event_name)
 
-        # Filter to high-impact only
-        high_impact = [e for e in events if e["impact"] == "high"]
+        # Format as one entry per day with comma-separated events
+        result = []
+        for date in sorted(by_date.keys()):
+            events_str = ", ".join(by_date[date][:5])  # Limit to 5 per day
+            if len(by_date[date]) > 5:
+                events_str += f" (+{len(by_date[date]) - 5} more)"
+            result.append({"date": date, "event": events_str, "impact": "high"})
 
-        # Dedupe by date + category
-        seen = set()
-        unique = []
-        for e in high_impact:
-            date_part = e["date"].split(" ")[0]
-            name = e["event"].lower()
-            if "cpi" in name or "inflation" in name:
-                cat = "CPI"
-            elif "gdp" in name:
-                cat = "GDP"
-            elif "payroll" in name or "nonfarm" in name:
-                cat = "NFP"
-            elif "unemploy" in name:
-                cat = "Unemployment"
-            elif "fed" in name or "fomc" in name:
-                cat = "FOMC"
-            elif "pce" in name:
-                cat = "PCE"
-            else:
-                cat = e["event"]
-
-            key = (date_part, cat)
-            if key not in seen:
-                seen.add(key)
-                unique.append({"date": date_part, "event": cat, "impact": "high"})
-
-        unique.sort(key=lambda x: x["date"])
-        return unique
+        return result
 
     except Exception:
         return []  # Fail silently - events are supplementary

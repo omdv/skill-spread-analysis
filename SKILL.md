@@ -10,11 +10,48 @@ Run `uv run scripts/analyze.py` to analyze SPX conditions for put/call spread se
 ## Workflow
 
 1. Run `uv run scripts/analyze.py`
-2. Show the full script output to the user
-3. Add a 2-3 sentence **Summary** covering:
-   - The recommendation (which spread or wait)
-   - Key risk factor (VIX level, upcoming events, or regime issue)
-   - Next action (e.g., "re-check after CPI", "wait for dip", "clear to enter")
+2. Format the results as a clean text report (see format below)
+3. Add a 2-3 sentence **Summary** at the end
+
+## Output Format
+
+```
+Options Spread Analysis Report (Live Data - [DATE TIME] UTC)
+
+═══════════════════════════════════════════════════════════════
+ OPTIONS SPREAD ANALYSIS
+═══════════════════════════════════════════════════════════════
+
+ SPX: [price]  |  VIX: [level] [arrow] ([change]% 5d)
+ Regime: [OK/UNFAVORABLE] (Hurst=[H] [regime], VR=[vr])
+ DTE: [min]-[max] days (half-life=[hl]d)
+
+PUT SPREAD                    CALL SPREAD
+───────────────────────────   ───────────────────────────
+ Signal: [signal]             Signal: [signal]
+ Z-Score: [z]                 Z-Score: [z]
+
+Put Reasons:
+  • [reason 1]
+  • [reason 2]
+  Boosters: [if any]
+
+Call Reasons:
+  • [reason 1]
+  • [reason 2]
+  Boosters: [if any]
+
+Upcoming Events (next 3 days):
+  • [date]: [event] [HIGH]
+  [or "None" if clear]
+
+► RECOMMENDATION: [recommendation]
+
+═══════════════════════════════════════════════════════════════
+
+Summary:
+[2-3 sentences: recommendation, key risk, next action]
+```
 
 ## Signals
 
