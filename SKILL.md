@@ -18,10 +18,6 @@ Run `uv run scripts/analyze.py` to analyze SPX conditions for put/call spread se
 ```
 Options Spread Analysis Report (Live Data - [DATE TIME] UTC)
 
-═══════════════════════════════════════════════════════════════
- OPTIONS SPREAD ANALYSIS
-═══════════════════════════════════════════════════════════════
-
  SPX: [price]  |  VIX: [level] [arrow] ([change]% 5d)
  Regime: [OK/UNFAVORABLE] (Hurst=[H] [regime], VR=[vr])
  DTE: [min]-[max] days (half-life=[hl]d)
@@ -46,8 +42,6 @@ Upcoming Events (next 3 days):
   [or "None" if clear]
 
 ► RECOMMENDATION: [recommendation]
-
-═══════════════════════════════════════════════════════════════
 
 Summary:
 [2-3 sentences: recommendation, key risk, next action]
