@@ -164,13 +164,30 @@ class SpreadSignal:
     conviction_boosters: list[str]
 
 
+def make_sparkline(values: list[float], width: int = 15) -> str:
+    """Create ASCII sparkline from values."""
+    if len(values) < 2:
+        return ""
+    # Use last `width` values
+    vals = values[-width:]
+    min_v, max_v = min(vals), max(vals)
+    if max_v == min_v:
+        return "▅" * len(vals)
+    blocks = "▁▂▃▄▅▆▇█"
+    scaled = [(v - min_v) / (max_v - min_v) for v in vals]
+    return "".join(blocks[min(7, int(s * 7.99))] for s in scaled)
+
+
 @dataclass
 class MarketAnalysis:
     timestamp: str
     spx_price: float
+    spx_change_5d: float  # 5-day SPX change %
+    spx_sparkline: str  # ASCII sparkline of recent prices
     vix_level: float
     vix_direction: str  # "rising", "falling", "flat"
     vix_change_5d: float  # 5-day VIX change %
+    vix_sparkline: str  # ASCII sparkline of recent VIX
 
     # Regime (applies to both)
     hurst: float
@@ -318,9 +335,9 @@ def analyze_put_spread(
     vix_ok = vix_direction in ("rising", "flat") or vix_zscore > 0
 
     if dip_ok:
-        reasons.append(f"Dip detected (Z={zscore:.2f})")
+        reasons.append(f"Below 20d MA (Z={zscore:.2f})")
     else:
-        reasons.append(f"No significant dip (Z={zscore:.2f})")
+        reasons.append(f"Near 20d MA (Z={zscore:.2f})")
 
     if vix_ok:
         reasons.append(f"VIX {vix_direction} - put premiums favorable")
@@ -381,9 +398,9 @@ def analyze_call_spread(
     vix_ok = vix_direction == "falling"
 
     if rally_ok:
-        reasons.append(f"Rally detected (Z={zscore:.2f})")
+        reasons.append(f"Above 20d MA (Z={zscore:.2f})")
     else:
-        reasons.append(f"No significant rally (Z={zscore:.2f})")
+        reasons.append(f"Near 20d MA (Z={zscore:.2f})")
 
     if vix_ok:
         reasons.append(f"VIX declining - confirms rally")
@@ -430,6 +447,17 @@ def analyze_market(
     """Run complete market analysis for both put and call spreads."""
     closes = spx_df["Close"]
 
+    # SPX 5-day change
+    if len(closes) >= 6:
+        spx_5d_ago = closes.iloc[-6]
+        spx_change_5d = (current_spx - spx_5d_ago) / spx_5d_ago * 100
+    else:
+        spx_change_5d = 0.0
+
+    # SPX sparkline (last 2 weeks)
+    sparkline_values = list(closes.tail(14).values) + [current_spx]
+    spx_sparkline = make_sparkline(sparkline_values)
+
     # Calculate stretch
     ma = closes.rolling(ma_period).mean()
     stretch = closes - ma
@@ -467,6 +495,10 @@ def analyze_market(
     vix_stretch = vix_series - vix_ma
     vix_std = vix_stretch.tail(ma_period).std()
     vix_zscore = (current_vix - vix_series.tail(ma_period).mean()) / vix_std if vix_std > 0 else 0
+
+    # VIX sparkline (last 2 weeks)
+    vix_sparkline_values = list(vix_series.tail(14).values) + [current_vix]
+    vix_sparkline = make_sparkline(vix_sparkline_values)
 
     # Regime check (applies to both directions)
     hurst_ok = hurst < 0.5
@@ -511,9 +543,12 @@ def analyze_market(
     return MarketAnalysis(
         timestamp=datetime.now().isoformat(),
         spx_price=current_spx,
+        spx_change_5d=round(spx_change_5d, 2),
+        spx_sparkline=spx_sparkline,
         vix_level=current_vix,
         vix_direction=vix_direction,
         vix_change_5d=round(vix_change, 2),
+        vix_sparkline=vix_sparkline,
         hurst=round(hurst, 4),
         hurst_regime=hurst_regime,
         variance_ratio=round(vr, 4),
@@ -593,56 +628,45 @@ def print_analysis(analysis: MarketAnalysis):
             return yellow
         return red
 
-    print(f"\n{bold}{'═' * 65}")
-    print(f" OPTIONS SPREAD ANALYSIS")
-    print(f"{'═' * 65}{reset}")
+    print(f"\n{bold}OPTIONS SPREAD ANALYSIS{reset}\n")
 
     # Market data
+    spx_arrow = "↑" if analysis.spx_change_5d > 0.5 else "↓" if analysis.spx_change_5d < -0.5 else "→"
     vix_arrow = "↑" if analysis.vix_direction == "rising" else "↓" if analysis.vix_direction == "falling" else "→"
-    print(f"\n {cyan}SPX:{reset} {analysis.spx_price:,.2f}  |  {cyan}VIX:{reset} {analysis.vix_level:.2f} {vix_arrow} ({analysis.vix_change_5d:+.1f}% 5d)")
+    print(f"SPX: {analysis.spx_price:>8,.2f} {spx_arrow} {analysis.spx_change_5d:+5.1f}% 5d {analysis.spx_sparkline}")
+    print(f"VIX: {analysis.vix_level:>8.2f} {vix_arrow} {analysis.vix_change_5d:+5.1f}% 5d {analysis.vix_sparkline}")
 
     # Regime
     regime_status = f"{green}OK{reset}" if analysis.regime_ok else f"{red}UNFAVORABLE{reset}"
-    print(f" {cyan}Regime:{reset} {regime_status} (Hurst={analysis.hurst:.3f} {analysis.hurst_regime}, VR={analysis.variance_ratio:.3f})")
-    print(f" {cyan}DTE:{reset} {analysis.recommended_dte_min}-{analysis.recommended_dte_max} days (half-life={analysis.half_life_days:.1f}d)")
+    print(f"Regime: {regime_status} (Hurst={analysis.hurst:.3f}, VR={analysis.variance_ratio:.3f})")
+    print(f"DTE: {analysis.recommended_dte_min}-{analysis.recommended_dte_max} days (half-life={analysis.half_life_days:.1f}d)")
 
-    # Side by side comparison
-    print(f"\n {bold}PUT SPREAD                    CALL SPREAD{reset}")
-    print(f" {'─' * 28}  {'─' * 28}")
-
+    # Put spread
     put_c = signal_color(analysis.put_signal.signal)
-    call_c = signal_color(analysis.call_signal.signal)
-
-    print(f" Signal: {put_c}{analysis.put_signal.signal:<20}{reset}  Signal: {call_c}{analysis.call_signal.signal}{reset}")
-    print(f" Z-Score: {analysis.put_signal.zscore:<19.2f}  Z-Score: {analysis.call_signal.zscore:+.2f}")
-
-    # Reasons
-    print(f"\n {cyan}Put Reasons:{reset}")
+    print(f"\n{bold}PUT SPREAD{reset}: {put_c}{analysis.put_signal.signal}{reset}")
     for r in analysis.put_signal.reasons:
-        print(f"   • {r}")
+        print(f"  • {r}")
     if analysis.put_signal.conviction_boosters:
-        print(f"   {green}Boosters: {', '.join(analysis.put_signal.conviction_boosters)}{reset}")
+        print(f"  {green}+ {', '.join(analysis.put_signal.conviction_boosters)}{reset}")
 
-    print(f"\n {cyan}Call Reasons:{reset}")
+    # Call spread
+    call_c = signal_color(analysis.call_signal.signal)
+    print(f"\n{bold}CALL SPREAD{reset}: {call_c}{analysis.call_signal.signal}{reset}")
     for r in analysis.call_signal.reasons:
-        print(f"   • {r}")
+        print(f"  • {r}")
     if analysis.call_signal.conviction_boosters:
-        print(f"   {green}Boosters: {', '.join(analysis.call_signal.conviction_boosters)}{reset}")
+        print(f"  {green}+ {', '.join(analysis.call_signal.conviction_boosters)}{reset}")
 
     # Upcoming events
     if analysis.events:
-        print(f"\n {cyan}Upcoming Events (next 3 days):{reset}")
+        print(f"\n{bold}Events (3d):{reset}")
         for evt in analysis.events:
             evt_color = red if evt.impact == "high" else yellow if evt.impact == "medium" else reset
-            print(f"   {evt_color}• {evt.date}: {evt.event} [{evt.impact.upper()}]{reset}")
-    else:
-        print(f"\n {cyan}Upcoming Events:{reset} None significant in next 3 days")
+            print(f"  {evt_color}• {evt.date}: {evt.event}{reset}")
 
     # Recommendation
     rec_color = green if "Consider" in analysis.recommendation else yellow if "WAIT" in analysis.recommendation else red
-    print(f"\n {bold}► RECOMMENDATION:{reset} {rec_color}{analysis.recommendation}{reset}")
-
-    print(f"\n{'═' * 65}\n")
+    print(f"\n{bold}► {rec_color}{analysis.recommendation}{reset}\n")
 
 
 def plot_analysis(
