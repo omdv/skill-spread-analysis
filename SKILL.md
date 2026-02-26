@@ -5,7 +5,7 @@ description: Analyzes market conditions for selling option spreads (put or call)
 
 # Options Spread Analysis
 
-Run `uv run ./scripts/analyze.py` and add a 2-3 sentence **Summary** interpreting the results.
+Run `uv run ./scripts/analyze.py` from the skill folder inside the workspace. Output results of the script as is and add a 2-3 sentence **Summary** interpreting the results.
 
 ## Signals
 
