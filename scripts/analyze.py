@@ -37,7 +37,7 @@ from statsmodels.tsa.stattools import adfuller, kpss
 
 warnings.filterwarnings("ignore", category=InterpolationWarning)
 
-FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+FMP_BASE_URL = "https://financialmodelingprep.com/stable"
 
 
 class FMPError(Exception):
@@ -62,8 +62,9 @@ def fetch_prices(symbol: str, days: int = 200, api_key: str | None = None) -> pd
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days + 30)
 
-    url = f"{FMP_BASE_URL}/historical-price-full/{fmp_symbol}"
+    url = f"{FMP_BASE_URL}/historical-price-eod/full"
     params = {
+        "symbol": fmp_symbol,
         "apikey": api_key,
         "from": start_date.strftime("%Y-%m-%d"),
         "to": end_date.strftime("%Y-%m-%d"),
@@ -74,10 +75,14 @@ def fetch_prices(symbol: str, days: int = 200, api_key: str | None = None) -> pd
         response.raise_for_status()
         data = response.json()
 
-    if "historical" not in data:
+    if isinstance(data, dict) and "historical" in data:
+        rows = data["historical"]
+    elif isinstance(data, list):
+        rows = data
+    else:
         raise FMPError(f"No data for {symbol}")
 
-    df = pd.DataFrame(data["historical"])
+    df = pd.DataFrame(rows)
     df = df.rename(columns={"date": "Date", "close": "Close", "open": "Open", "high": "High", "low": "Low"})
     df["Date"] = pd.to_datetime(df["Date"])
     df = df.sort_values("Date").tail(days).reset_index(drop=True)
@@ -92,9 +97,9 @@ def fetch_quote(symbol: str, api_key: str | None = None) -> float:
     symbol_map = {"SPX": "^GSPC", "VIX": "^VIX"}
     fmp_symbol = symbol_map.get(symbol.upper(), symbol)
 
-    url = f"{FMP_BASE_URL}/quote/{fmp_symbol}"
+    url = f"{FMP_BASE_URL}/quote/"
     with httpx.Client(timeout=30.0) as client:
-        response = client.get(url, params={"apikey": api_key})
+        response = client.get(url, params={"apikey": api_key, "symbol": fmp_symbol})
         response.raise_for_status()
         data = response.json()
 
